@@ -1,5 +1,6 @@
 import os
 from cv2 import CALIB_CB_FAST_CHECK, waitKey
+from matplotlib.pyplot import axis
 import numpy as np
 import cv2
 import os
@@ -140,14 +141,33 @@ k1,k2=0,0
 #     return np.reshape((1+ k1*r**2 +k2*r**4),(-1,1))
 
 # maximum likelihood estimation 
-def L2(m, R_t_i, M):
-    return np.square(m - (A @ (R_t_i @ M.T)).T).sum()
+def L2(params, m, R_t_i, M):
+    alpha, beta, px, py, k1, k2 = params
+
+    A_opt = np.array([
+        [alpha, 0, px],
+        [0, beta, py],
+        [0,0,1]
+    ])
+
+    #get normalized ideal image points
+    M_bar = (R_t_i @ M.T).T
+    M_bar /= M_bar[:,2:]
+    
+    r = np.square(M_bar[:,:2]).sum(axis=1)
+#     
+    m_cap = (A_opt @ M_bar.T).T
+    m_cap[:,0] = m_cap[:,0] + (m_cap[:,0] - px) * (k1 * r + k2 * np.square(r))
+    m_cap[:,1] = m_cap[:,1] + (m_cap[:,1] - py) * (k1 * r + k2 * np.square(r))
+
+
+    return np.square(m - m_cap).sum()
 
 def minimization_fn(params):
     error = 0
     n_images = len(image_paths)
     for i in range(n_images):
-        error += L2(m_all_images[i],R_t_all_images[i],M_hat)
+        error += L2(params, m_all_images[i],R_t_all_images[i],M_hat)
     return error
 
 params = [alpha,beta,px,py,k1,k2]
