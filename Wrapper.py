@@ -5,12 +5,17 @@ import numpy as np
 import cv2
 import os
 import scipy.optimize
+import argparse
 
-IMG_DIR = 'Calibration_Imgs'
+argparser = argparse.ArgumentParser()
+argparser.add_argument("--path", default="Calibration_Imgs")
+args= argparser.parse_args()
+
+IMG_DIR = args.path # 6'Calibration_Imgs'
 N_ROWS = 9
 N_COLS = 6
 BLOCK_SIZE = 21.5 #in mm
-image_paths = [os.path.join(IMG_DIR, image) for image in os.listdir(IMG_DIR)]
+image_paths = [os.path.join(IMG_DIR, image)     for image in os.listdir(IMG_DIR)]
 # print(image_paths)
 images = [cv2.imread(img_path) for img_path in image_paths]
 
@@ -22,8 +27,9 @@ for i,img in enumerate(images):
     #get m from images
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     is_found, corners = cv2.findChessboardCorners(gray,(N_ROWS,N_COLS),flags=cv2.CALIB_CB_ADAPTIVE_THRESH+cv2.CALIB_CB_FAST_CHECK)
-    cv2.drawChessboardCorners(img,(9,6),corners,is_found)
-    cv2.imwrite('draw_corners_'+str(i)+'.png',img)
+    copy = img.copy()
+    cv2.drawChessboardCorners(copy,(9,6),corners,is_found)
+    cv2.imwrite('draw_corners_'+str(i)+'.png',copy)
     corners = corners.reshape(-1,2)
     #adhering to convention in the paper
     m = corners
@@ -129,16 +135,11 @@ for H in H_all_images:
     t =  lmbda * A_inverse @ H[:,2]
     r3 = lambda r1,r2: np.cross(r1, r2)
 
-    R_t_all_images.append(np.array([r1.T,r2.T,t.T]))
+    R_t_all_images.append(np.array([r1,r2,t]).T)
     # t_all_images.append(t)
 
 # init distortion parameters 
 k1,k2=0,0
-
-# def L(m):
-#     #m = (x,y,1)
-#     r = np.square(m - np.repeat(np.array([[px,py,1]]),m.shape[0],axis=0)).sum(axis=1)
-#     return np.reshape((1+ k1*r**2 +k2*r**4),(-1,1))
 
 # maximum likelihood estimation 
 def L2(params, m, R_t_i, M):
@@ -160,7 +161,6 @@ def L2(params, m, R_t_i, M):
     m_cap[:,0] = m_cap[:,0] + (m_cap[:,0] - px) * (k1 * r + k2 * np.square(r))
     m_cap[:,1] = m_cap[:,1] + (m_cap[:,1] - py) * (k1 * r + k2 * np.square(r))
 
-
     return np.square(m - m_cap).sum()
 
 def minimization_fn(params):
@@ -171,7 +171,7 @@ def minimization_fn(params):
     return error
 
 params = [alpha,beta,px,py,k1,k2]
-optimized = scipy.optimize.minimize(minimization_fn, params, )
+optimized = scipy.optimize.minimize(minimization_fn, params, options={'maxiter':1000})
 print(optimized)
 
 alpha_opt, beta_opt, px_opt, py_opt, k1_opt, k2_opt = optimized.x
@@ -182,3 +182,35 @@ opt_A = np.array([
     [0,0,1]
 ])
 print(opt_A)
+
+
+for i in range(len(image_paths)):
+    m = m_all_images[i]
+    # calc reprojection error
+    M_bar = (R_t_all_images[i] @ M_hat.T).T
+    M_bar /= M_bar[:,2:]
+    
+    r = np.square(M_bar[:,:2]).sum(axis=1)
+#     
+    m_cap = (opt_A @ M_bar.T).T
+    m_cap[:,0] = m_cap[:,0] + (m_cap[:,0] - px_opt) * (k1_opt * r + k2_opt * np.square(r))
+    m_cap[:,1] = m_cap[:,1] + (m_cap[:,1] - py_opt) * (k1_opt * r + k2_opt * np.square(r))
+
+    reprojection_error = np.round(np.abs(((m - m_cap).sum(axis=1))).mean(), 4)
+    print(reprojection_error)
+
+    #show images after rectification and reprojection of corners on rectified image
+    undistorted_image = cv2.undistort(images[i], opt_A, np.array([k1,k2,0,0,0]))
+
+    for x,y,_ in m_cap:
+        cv2.circle(undistorted_image, (int(x),int(y)), 0, (255,0,0), 30)
+    for x,y,_ in m:
+        cv2.circle(undistorted_image, (int(x),int(y)), 0, (0,255,0), 15)
+
+    cv2.imwrite('undistorted_'+str(i)+'.png', undistorted_image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+
+print(reprojection_error.mean())
+
