@@ -11,7 +11,7 @@ argparser = argparse.ArgumentParser()
 argparser.add_argument("--path", default="Calibration_Imgs")
 args= argparser.parse_args()
 
-IMG_DIR = args.path # 6'Calibration_Imgs'
+IMG_DIR = args.path 
 N_ROWS = 9
 N_COLS = 6
 BLOCK_SIZE = 21.5 #in mm
